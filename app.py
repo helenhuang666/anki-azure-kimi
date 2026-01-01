@@ -46,7 +46,7 @@ def evaluate():
     if not AZURE_KEY:
         return json_response({'error': '未配置Azure Key'}, 503)
 
-    # ✅ 正确的 try-except 结构
+    # ✅ 正确的 try-except 结构（所有 except 与 try 同缩进）
     try:
         # 验证请求
         if 'audio' not in request.files:
@@ -57,7 +57,10 @@ def evaluate():
         audio = request.files['audio'].read()
         text = request.form['referenceText'].strip()
         
-        # 调用Azure
+        if not text:
+            return json_response({'error': '参考文本不能为空'}, 400)
+
+        # 准备Azure请求头
         headers = {
             'Ocp-Apim-Subscription-Key': AZURE_KEY,
             'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000',
@@ -68,6 +71,7 @@ def evaluate():
             })
         }
         
+        # 调用Azure API
         resp = requests.post(
             AZURE_ENDPOINT,
             params={'language': 'en-US', 'format': 'detailed'},
@@ -77,7 +81,8 @@ def evaluate():
         )
         
         if resp.status_code != 200:
-            return json_response({'error': 'Azure失败', 'details': resp.text}, resp.status_code)
+            logging.error(f"Azure API错误: {resp.text}")
+            return json_response({'error': 'Azure测评失败', 'details': resp.text}, resp.status_code)
         
         result = resp.json()
         assessment = result['NBest'][0]['PronunciationAssessment']
@@ -90,23 +95,24 @@ def evaluate():
             'completenessScore': assessment['CompletenessScore']
         })
     
-    # ✅ 所有 except 对齐 try
+    # ✅ 所有 except 必须和 try 左对齐
     except requests.exceptions.Timeout:
-        return json_response({'error': '超时'}, 504)
+        logging.warning("Azure请求超时")
+        return json_response({'error': '请求超时（30秒）'}, 504)
     
     except requests.exceptions.RequestException as e:
-        logging.error(f"网络错误: {e}")
-        return json_response({'error': '网络失败', 'details': str(e)}, 502
+        logging.error(f"网络请求失败: {e}")
+        return json_response({'error': '无法连接到Azure服务', 'details': str(e)}, 502)
     
-    except (KeyError, IndexError) as e:
-        logging.error(f"解析失败: {e}")
-        return json_response({'error': '解析错误', 'details': str(e)}, 500
+    except KeyError as e:
+        logging.error(f"Azure响应缺少字段: {e}")
+        return json_response({'error': '响应格式错误', 'details': str(e)}, 500)
     
     except Exception as e:
         logging.error(f"未知错误: {e}", exc_info=True)
-        return json_response({'error': '内部错误', 'details': str(e)}, 500
+        return json_response({'error': '服务器内部错误', 'details': str(e)}, 500)
 
 # ==================== 启动 ====================
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=False)
