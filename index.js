@@ -41,7 +41,20 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
       body: audioBuffer
     });
 
+    /* ===== 新增：关键诊断 ===== */
+    if (!r.ok) {
+      const text = await r.text();
+      console.error("❌ Azure HTTP Error:", r.status, text);
+      return res.status(500).json({
+        error: "azure_error",
+        status: r.status,
+        detail: text
+      });
+    }
+
     const raw = await r.json();
+    console.log("✅ Azure raw:", JSON.stringify(raw).slice(0, 300));
+
     const nbest = raw?.NBest?.[0];
     const w = nbest?.Words?.[0];
 
@@ -57,8 +70,8 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
       phonemes
     });
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "assess failed" });
+    console.error("❌ assess exception:", e);
+    res.status(500).json({ error: "assess_exception" });
   }
 });
 
