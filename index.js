@@ -1,26 +1,56 @@
 import express from "express";
 import multer from "multer";
-import fetch from "node-fetch";
 import fs from "fs";
+import fetch from "node-fetch";
+import cors from "cors";
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
 
-app.use(express.static("public"));
-
-/* ===== 用 REGION 生成 Azure Endpoint ===== */
-const AZURE_REGION = process.env.AZURE_REGION;
+/* =========================
+   环境变量
+========================= */
 const AZURE_KEY = process.env.AZURE_KEY;
+const AZURE_REGION = process.env.AZURE_REGION;
 
-if (!AZURE_REGION || !AZURE_KEY) {
-  console.error("❌ Missing AZURE_REGION or AZURE_KEY");
+if (!AZURE_KEY || !AZURE_REGION) {
+  console.error("❌ Missing AZURE_KEY or AZURE_REGION");
 }
 
-const AZURE_ENDPOINT = `https://${AZURE_REGION}.stt.speech.microsoft.com`;
+/* =========================
+   Azure Endpoint（自动拼）
+   不需要 AZURE_ENDPOINT
+========================= */
+const AZURE_ENDPOINT =
+  `https://${AZURE_REGION}.stt.speech.microsoft.com`;
 
+/* =========================
+   CORS（关键）
+========================= */
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"]
+}));
+app.options("*", cors());
+
+/* =========================
+   Health Check
+========================= */
+app.get("/", (req, res) => {
+  res.send("OK");
+});
+
+/* =========================
+   Pronunciation Assess
+========================= */
 app.post("/assess", upload.single("audio"), async (req, res) => {
   try {
     const word = req.body.word;
+    if (!word || !req.file) {
+      return res.status(400).json({ error: "missing word or audio" });
+    }
+
     const audioBuffer = fs.readFileSync(req.file.path);
 
     const url =
@@ -41,40 +71,49 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
       body: audioBuffer
     });
 
-    /* ===== 新增：关键诊断 ===== */
+    /* ===== Azure HTTP 错误直接返回 ===== */
     if (!r.ok) {
       const text = await r.text();
       console.error("❌ Azure HTTP Error:", r.status, text);
       return res.status(500).json({
-        error: "azure_error",
+        error: "azure_http_error",
         status: r.status,
         detail: text
       });
     }
 
     const raw = await r.json();
-    console.log("✅ Azure raw:", JSON.stringify(raw).slice(0, 300));
+    console.log("✅ Azure raw:", JSON.stringify(raw));
 
+    /* ===== 解析结果 ===== */
     const nbest = raw?.NBest?.[0];
-    const w = nbest?.Words?.[0];
+    const wordInfo = nbest?.Words?.[0];
 
     const phonemes =
-      w?.Phonemes?.map(p => ({
+      wordInfo?.Phonemes?.map(p => ({
         symbol: p.Phoneme,
-        grapheme: p.Grapheme || "",
         score: Math.round(p.AccuracyScore || 0)
       })) || [];
 
     res.json({
       score: Math.round(nbest?.AccuracyScore || 0),
-      phonemes
+      phonemes,
+      raw   // 前端 UI 用得上（音素级）
     });
   } catch (e) {
     console.error("❌ assess exception:", e);
     res.status(500).json({ error: "assess_exception" });
+  } finally {
+    if (req.file?.path) {
+      fs.unlink(req.file.path, () => {});
+    }
   }
 });
 
-app.listen(3000, () => {
-  console.log("Server running on port 3000");
+/* =========================
+   Start Server
+========================= */
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("Server running on port", PORT);
 });
