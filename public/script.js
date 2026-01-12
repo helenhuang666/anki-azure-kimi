@@ -1,8 +1,8 @@
-/* ========= 音素音频（必须全局预创建，iOS 才能播） ========= */
+/* ===== 预创建音频对象（iOS / Anki 必须） ===== */
 const phonemeAudio = new Audio();
 phonemeAudio.preload = "auto";
 
-/* ========= 渲染评测结果 ========= */
+/* ===== 渲染评测结果 ===== */
 function renderResult(data) {
   const box = document.getElementById("phoneme-bars");
   box.innerHTML = "";
@@ -27,7 +27,7 @@ function renderResult(data) {
   });
 }
 
-/* ========= 播放音素 ========= */
+/* ===== 播放音素 ===== */
 function playPhoneme(symbol) {
   phonemeAudio.pause();
   phonemeAudio.currentTime = 0;
@@ -36,18 +36,18 @@ function playPhoneme(symbol) {
   phonemeAudio.play().catch(() => {});
 }
 
-/* ========= 显示纠音提示 ========= */
+/* ===== 显示纠音提示 ===== */
 function showTip(symbol) {
   document.getElementById("tip").innerText =
     window.PHONEME_TIPS?.[symbol] || "暂无纠音提示";
 }
 
-/* ========= 工具 ========= */
+/* ===== 工具 ===== */
 function scoreColor(s) {
   if (s >= 90) return "#9fcd8a";
   if (s >= 70) return "#f2d37c";
   return "#ef8c8c";
 }
 
-/* ========= 导出给 Anki 使用 ========= */
+/* ===== 暴露给 Anki ===== */
 window.renderResult = renderResult;
