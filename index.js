@@ -18,19 +18,18 @@ if (!AZURE_KEY || !AZURE_REGION) {
 }
 
 /* =========================
-   Azure Endpoint（自动拼）
-   不需要 AZURE_ENDPOINT
+   Azure Endpoint
 ========================= */
 const AZURE_ENDPOINT =
   `https://${AZURE_REGION}.stt.speech.microsoft.com`;
 
 /* =========================
-   CORS（关键）
+   CORS（Anki 必须）
 ========================= */
 app.use(cors({
   origin: "*",
   methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type"]
+  allowedHeaders: ["Content-Type", "Pronunciation-Assessment"]
 }));
 app.options("*", cors());
 
@@ -42,7 +41,7 @@ app.get("/", (req, res) => {
 });
 
 /* =========================
-   Pronunciation Assess
+   Pronunciation Assessment
 ========================= */
 app.post("/assess", upload.single("audio"), async (req, res) => {
   try {
@@ -53,25 +52,32 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
 
     const audioBuffer = fs.readFileSync(req.file.path);
 
+    /* ===== Pronunciation Assessment 配置（关键） ===== */
+    const paConfig = {
+      ReferenceText: word,
+      GradingSystem: "HundredMark",
+      PhonemeAlphabet: "IPA",
+      Dimension: "Comprehensive"
+    };
+
+    const paHeader = Buffer
+      .from(JSON.stringify(paConfig))
+      .toString("base64");
+
     const url =
       `${AZURE_ENDPOINT}/speech/recognition/conversation/cognitiveservices/v1` +
-      `?language=en-US` +
-      `&format=detailed` +
-      `&pronunciationAssessment.referenceText=${encodeURIComponent(word)}` +
-      `&pronunciationAssessment.gradingSystem=HundredMark` +
-      `&pronunciationAssessment.phonemeAlphabet=IPA` +
-      `&pronunciationAssessment.dimension=Comprehensive`;
+      `?language=en-US&format=detailed`;
 
     const r = await fetch(url, {
       method: "POST",
       headers: {
         "Ocp-Apim-Subscription-Key": AZURE_KEY,
-        "Content-Type": "audio/wav"
+        "Content-Type": "audio/wav",
+        "Pronunciation-Assessment": paHeader
       },
       body: audioBuffer
     });
 
-    /* ===== Azure HTTP 错误直接返回 ===== */
     if (!r.ok) {
       const text = await r.text();
       console.error("❌ Azure HTTP Error:", r.status, text);
@@ -85,9 +91,11 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
     const raw = await r.json();
     console.log("✅ Azure raw:", JSON.stringify(raw));
 
-    /* ===== 解析结果 ===== */
+    /* ===== 解析发音评测结果 ===== */
     const nbest = raw?.NBest?.[0];
     const wordInfo = nbest?.Words?.[0];
+
+    const score = Math.round(nbest?.AccuracyScore || 0);
 
     const phonemes =
       wordInfo?.Phonemes?.map(p => ({
@@ -96,10 +104,11 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
       })) || [];
 
     res.json({
-      score: Math.round(nbest?.AccuracyScore || 0),
+      score,
       phonemes,
-      raw   // 前端 UI 用得上（音素级）
+      raw
     });
+
   } catch (e) {
     console.error("❌ assess exception:", e);
     res.status(500).json({ error: "assess_exception" });
