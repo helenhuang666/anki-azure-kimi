@@ -8,14 +8,23 @@ const upload = multer({ dest: "uploads/" });
 
 app.use(express.static("public"));
 
+/* ===== 用 REGION 生成 Azure Endpoint ===== */
+const AZURE_REGION = process.env.AZURE_REGION;
+const AZURE_KEY = process.env.AZURE_KEY;
+
+if (!AZURE_REGION || !AZURE_KEY) {
+  console.error("❌ Missing AZURE_REGION or AZURE_KEY");
+}
+
+const AZURE_ENDPOINT = `https://${AZURE_REGION}.stt.speech.microsoft.com`;
+
 app.post("/assess", upload.single("audio"), async (req, res) => {
   try {
     const word = req.body.word;
     const audioBuffer = fs.readFileSync(req.file.path);
 
     const url =
-      process.env.AZURE_ENDPOINT +
-      `/speech/recognition/conversation/cognitiveservices/v1` +
+      `${AZURE_ENDPOINT}/speech/recognition/conversation/cognitiveservices/v1` +
       `?language=en-US` +
       `&format=detailed` +
       `&pronunciationAssessment.referenceText=${encodeURIComponent(word)}` +
@@ -26,14 +35,13 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
     const r = await fetch(url, {
       method: "POST",
       headers: {
-        "Ocp-Apim-Subscription-Key": process.env.AZURE_KEY,
+        "Ocp-Apim-Subscription-Key": AZURE_KEY,
         "Content-Type": "audio/wav"
       },
       body: audioBuffer
     });
 
     const raw = await r.json();
-
     const nbest = raw?.NBest?.[0];
     const w = nbest?.Words?.[0];
 
