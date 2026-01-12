@@ -58,19 +58,24 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
       return res.json({ success: false, message: "Azure non-JSON", raw: text });
     }
 
-    const pa = json?.NBest?.[0]?.PronunciationAssessment;
-    if (!pa) {
-      return res.json({ success: false, message: "No score", raw: json });
-    }
+    const best = json?.NBest?.[0];
 
-    res.json({
-      success: true,
-      accuracy: pa.AccuracyScore,
-      fluency: pa.FluencyScore,
-      completeness: pa.CompletenessScore,
-      pronunciation: pa.PronScore,
-      detail: pa
-    });
+if (!best || best.AccuracyScore == null) {
+  return res.json({
+    success: false,
+    message: "No score",
+    raw: json
+  });
+}
+
+res.json({
+  success: true,
+  pronunciation: best.AccuracyScore,   // ⭐ 核心分数
+  confidence: best.Confidence,
+  word: best.Lexical,
+  phonemes: best.Words?.[0]?.Phonemes || [],
+  syllables: best.Words?.[0]?.Syllables || []
+});
 
   } catch (e) {
     console.error(e);
