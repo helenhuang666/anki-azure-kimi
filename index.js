@@ -11,7 +11,7 @@ app.use(express.static("public"));
 app.post("/assess", upload.single("audio"), async (req, res) => {
   try {
     const word = req.body.word;
-    const audio = fs.readFileSync(req.file.path);
+    const audioBuffer = fs.readFileSync(req.file.path);
 
     const url =
       process.env.AZURE_ENDPOINT +
@@ -29,10 +29,11 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
         "Ocp-Apim-Subscription-Key": process.env.AZURE_KEY,
         "Content-Type": "audio/wav"
       },
-      body: audio
+      body: audioBuffer
     });
 
     const raw = await r.json();
+
     const nbest = raw?.NBest?.[0];
     const w = nbest?.Words?.[0];
 
