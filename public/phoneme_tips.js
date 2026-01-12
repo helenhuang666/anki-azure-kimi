@@ -1,4 +1,4 @@
-export const PhonemeTips = {
+window.PHONEME_TIPS = {
   // 元音
   "i": "嘴角向两边展开，像微笑一样，发长音'衣'。",
   "ɪ": "嘴唇微张，发短促的'一'音，比长音i短。",
