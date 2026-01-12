@@ -1,77 +1,55 @@
 import express from "express";
 import multer from "multer";
 import fetch from "node-fetch";
-import cors from "cors";
+import fs from "fs";
 
 const app = express();
-app.use(cors());
-app.use(express.json());
-app.use(express.static("public")); // ⭐ 关键：托管前端文件
+const upload = multer({ dest: "uploads/" });
 
-const upload = multer({ storage: multer.memoryStorage() });
+app.use(express.static("public"));
 
-const AZURE_KEY = process.env.AZURE_KEY;
-const AZURE_REGION = process.env.AZURE_REGION;
-
-/* 发音评测接口 */
 app.post("/assess", upload.single("audio"), async (req, res) => {
   try {
-    const word = req.body.word || req.body["单词"];
-    const audio = req.file;
-
-    console.log("Word:", word);
-    console.log("Audio:", audio?.mimetype, audio?.size);
-
-    if (!word || !audio) {
-      return res.status(400).json({ error: "Missing word or audio" });
-    }
-
-    const assessment = {
-      ReferenceText: word,
-      GradingSystem: "HundredMark",
-      Granularity: "Phoneme",
-      PhonemeAlphabet: "IPA"
-    };
-
-    const header = Buffer.from(JSON.stringify(assessment)).toString("base64");
+    const word = req.body.word;
+    const audio = fs.readFileSync(req.file.path);
 
     const url =
-      `https://${AZURE_REGION}.stt.speech.microsoft.com/` +
-      `speech/recognition/conversation/cognitiveservices/v1?language=en-US`;
+      process.env.AZURE_ENDPOINT +
+      `/speech/recognition/conversation/cognitiveservices/v1` +
+      `?language=en-US` +
+      `&format=detailed` +
+      `&pronunciationAssessment.referenceText=${encodeURIComponent(word)}` +
+      `&pronunciationAssessment.gradingSystem=HundredMark` +
+      `&pronunciationAssessment.phonemeAlphabet=IPA` +
+      `&pronunciationAssessment.dimension=Comprehensive`;
 
     const r = await fetch(url, {
       method: "POST",
       headers: {
-        "Ocp-Apim-Subscription-Key": AZURE_KEY,
-        "Content-Type": "audio/wav",
-        "Pronunciation-Assessment": header
+        "Ocp-Apim-Subscription-Key": process.env.AZURE_KEY,
+        "Content-Type": "audio/wav"
       },
-      body: audio.buffer
+      body: audio
     });
 
-    const text = await r.text();
-    console.log("Azure raw:", text);
+    const raw = await r.json();
+    const nbest = raw?.NBest?.[0];
+    const w = nbest?.Words?.[0];
 
-    const json = JSON.parse(text);
-    const best = json?.NBest?.[0];
-
-    if (!best || !best.Words?.[0]?.Phonemes) {
-      return res.json({ success: false, message: "No phoneme data", raw: json });
-    }
+    const phonemes =
+      w?.Phonemes?.map(p => ({
+        symbol: p.Phoneme,
+        grapheme: p.Grapheme || "",
+        score: Math.round(p.AccuracyScore || 0)
+      })) || [];
 
     res.json({
-      success: true,
-      word: best.Lexical,
-      score: Math.round(best.AccuracyScore),
-      phonemes: best.Words[0].Phonemes.map(p => ({
-        symbol: p.Phoneme,
-        score: Math.round(p.AccuracyScore)
-      }))
+      score: Math.round(nbest?.AccuracyScore || 0),
+      phonemes
     });
-
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: "assess failed" });
   }
 });
 
