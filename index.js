@@ -5,12 +5,15 @@ import cors from "cors";
 
 const app = express();
 app.use(cors());
+app.use(express.json());
+app.use(express.static("public")); // ⭐ 关键：托管前端文件
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 const AZURE_KEY = process.env.AZURE_KEY;
 const AZURE_REGION = process.env.AZURE_REGION;
 
+/* 发音评测接口 */
 app.post("/assess", upload.single("audio"), async (req, res) => {
   try {
     const word = req.body.word || req.body["单词"];
@@ -30,9 +33,7 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
       PhonemeAlphabet: "IPA"
     };
 
-    const header = Buffer
-      .from(JSON.stringify(assessment))
-      .toString("base64");
+    const header = Buffer.from(JSON.stringify(assessment)).toString("base64");
 
     const url =
       `https://${AZURE_REGION}.stt.speech.microsoft.com/` +
@@ -51,31 +52,22 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
     const text = await r.text();
     console.log("Azure raw:", text);
 
-    let json;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      return res.json({ success: false, message: "Azure non-JSON", raw: text });
-    }
-
+    const json = JSON.parse(text);
     const best = json?.NBest?.[0];
 
-if (!best || best.AccuracyScore == null) {
-  return res.json({
-    success: false,
-    message: "No score",
-    raw: json
-  });
-}
+    if (!best || !best.Words?.[0]?.Phonemes) {
+      return res.json({ success: false, message: "No phoneme data", raw: json });
+    }
 
-res.json({
-  success: true,
-  pronunciation: best.AccuracyScore,   // ⭐ 核心分数
-  confidence: best.Confidence,
-  word: best.Lexical,
-  phonemes: best.Words?.[0]?.Phonemes || [],
-  syllables: best.Words?.[0]?.Syllables || []
-});
+    res.json({
+      success: true,
+      word: best.Lexical,
+      score: Math.round(best.AccuracyScore),
+      phonemes: best.Words[0].Phonemes.map(p => ({
+        symbol: p.Phoneme,
+        score: Math.round(p.AccuracyScore)
+      }))
+    });
 
   } catch (e) {
     console.error(e);
