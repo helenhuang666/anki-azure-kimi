@@ -1,0 +1,39 @@
+body {
+  font-family: system-ui;
+  text-align: center;
+}
+
+#word {
+  font-size: 36px;
+  color: #3f6ed5;
+}
+
+#score {
+  font-size: 48px;
+  color: #3f6ed5;
+  margin: 20px 0;
+}
+
+#phonemes {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.phoneme {
+  width: 60px;
+  padding: 8px;
+  border-radius: 16px;
+  background: #eaf3ff;
+  cursor: pointer;
+}
+
+.phoneme.good { background: #7cc576; color: white; }
+.phoneme.mid  { background: #f6c343; color: white; }
+.phoneme.bad  { background: #e85c5c; color: white; }
+
+#tip {
+  margin-top: 20px;
+  font-size: 16px;
+}
