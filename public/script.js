@@ -1,40 +1,53 @@
-/* 从 URL 获取参数（Anki 复用用） */
-const params = new URLSearchParams(location.search);
-const word = params.get("word") || "important";
+/* ========= 音素音频（必须全局预创建，iOS 才能播） ========= */
+const phonemeAudio = new Audio();
+phonemeAudio.preload = "auto";
 
-/* 示例：真实项目中用 fetch /assess 的返回 */
-const result = window.__ASSESS_RESULT__; // 可替换成真实接口
+/* ========= 渲染评测结果 ========= */
+function renderResult(data) {
+  const box = document.getElementById("phoneme-bars");
+  box.innerHTML = "";
 
-document.getElementById("word").innerText = word;
-document.getElementById("score").innerText = result.score + " 分";
+  data.phonemes.forEach(p => {
+    const bar = document.createElement("div");
+    bar.className = "ph-bar";
+    bar.style.background = scoreColor(p.score);
 
-const phonemeBox = document.getElementById("phonemes");
+    bar.innerHTML = `
+      <div class="char">${p.grapheme}</div>
+      <div class="ipa">${p.symbol}</div>
+      <div class="score">${p.score}</div>
+    `;
 
-result.phonemes.forEach(p => {
-  const div = document.createElement("div");
-  div.className = "phoneme " + level(p.score);
-  div.innerHTML = `
-    <div>${p.symbol}</div>
-    <div>${p.score}</div>
-  `;
-  div.onclick = () => {
-    playPhoneme(p.symbol);
-    showTip(p.symbol);
-  };
-  phonemeBox.appendChild(div);
-});
+    bar.onclick = () => {
+      playPhoneme(p.symbol);
+      showTip(p.symbol);
+    };
 
-function level(score) {
-  if (score >= 90) return "good";
-  if (score >= 70) return "mid";
-  return "bad";
+    box.appendChild(bar);
+  });
 }
 
+/* ========= 播放音素 ========= */
 function playPhoneme(symbol) {
-  new Audio(`audio_phoneme/${symbol}.mp3`).play();
+  phonemeAudio.pause();
+  phonemeAudio.currentTime = 0;
+  phonemeAudio.src =
+    `/audio_phoneme/${encodeURIComponent(symbol)}.mp3`;
+  phonemeAudio.play().catch(() => {});
 }
 
+/* ========= 显示纠音提示 ========= */
 function showTip(symbol) {
   document.getElementById("tip").innerText =
     window.PHONEME_TIPS?.[symbol] || "暂无纠音提示";
 }
+
+/* ========= 工具 ========= */
+function scoreColor(s) {
+  if (s >= 90) return "#9fcd8a";
+  if (s >= 70) return "#f2d37c";
+  return "#ef8c8c";
+}
+
+/* ========= 导出给 Anki 使用 ========= */
+window.renderResult = renderResult;
