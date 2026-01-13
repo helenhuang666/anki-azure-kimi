@@ -1,20 +1,76 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <title>Pronunciation</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
+import express from "express";
+import fetch from "node-fetch";
+import multer from "multer";
+import cors from "cors";
 
-<div class="container">
-  <div id="word"></div>
-  <div id="score"></div>
-  <div id="phonemes"></div>
-  <div id="tip"></div>
-</div>
+const app = express();
+const upload = multer();
 
-<script src="phoneme_tips.js"></script>
-<script src="script.js"></script>
-</body>
-</html>
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"]
+}));
+app.options("*", cors());
+
+app.use(express.static("public"));
+
+const AZURE_KEY = process.env.AZURE_KEY;
+const AZURE_REGION = process.env.AZURE_REGION;
+
+// ⚠️ 不需要 AZURE_ENDPOINT
+const AZURE_URL = `https://${AZURE_REGION}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1`;
+
+app.post("/assess", upload.single("audio"), async (req, res) => {
+  try {
+    const word = req.body.word;
+    const audioBuffer = req.file?.buffer;
+
+    if (!word || !audioBuffer) {
+      return res.json({ error: "Missing word or audio" });
+    }
+
+    const url =
+      `${AZURE_URL}?language=en-US&format=detailed` +
+      `&pronunciationAssessment.referenceText=${encodeURIComponent(word)}` +
+      `&pronunciationAssessment.gradingSystem=HundredMark` +
+      `&pronunciationAssessment.phonemeAlphabet=IPA` +
+      `&pronunciationAssessment.dimension=Comprehensive`;
+
+    const azureRes = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Ocp-Apim-Subscription-Key": AZURE_KEY,
+        "Content-Type": "audio/wav"
+      },
+      body: audioBuffer
+    });
+
+    const result = await azureRes.json();
+    console.log("✅ Azure raw:", JSON.stringify(result));
+
+    const nbest = result?.NBest?.[0];
+
+    let phonemes = [];
+    if (nbest?.Words?.length) {
+      phonemes = nbest.Words[0].Phonemes.map(p => ({
+        symbol: p.Phoneme,
+        score: Math.round(p.AccuracyScore ?? 0)
+      }));
+    }
+
+    res.json({
+      score: Math.round(nbest?.AccuracyScore ?? 0),
+      phonemes
+    });
+
+  } catch (err) {
+    console.error("❌ assess error:", err);
+    res.json({ error: "Assessment failed" });
+  }
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("Server running on port", PORT);
+});
