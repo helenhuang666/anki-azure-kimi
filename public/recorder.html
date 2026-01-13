@@ -2,16 +2,85 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Recorder</title>
+<title>Pronunciation</title>
+
+<style>
+body {
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  margin: 10px;
+}
+
+#word {
+  font-size: 28px;
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+#controls {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+#status {
+  text-align: center;
+  margin: 8px 0;
+}
+
+#phonemes {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.phoneme {
+  width: 34px;
+  border-radius: 4px;
+  background: #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+
+.phoneme-score {
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.phoneme-letters {
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.phoneme-ipa {
+  font-size: 14px;
+  margin-top: 2px;
+}
+
+.phoneme-bar {
+  width: 100%;
+  background: #60a5fa;
+  border-radius: 3px 3px 0 0;
+}
+</style>
 </head>
+
 <body>
 
-<div>
-  <div id="word" style="font-size:24px;">{{Word}}</div>
+<div id="word">{{Word}}</div>
+
+<div id="controls">
   <button id="rec">🎙 录音</button>
   <button id="stop">⏹ 停止并评测</button>
-  <div id="status"></div>
 </div>
+
+<div id="status"></div>
+
+<div id="phonemes"></div>
 
 <script>
 let audioCtx, processor, input;
@@ -20,6 +89,7 @@ let chunks = [];
 const recBtn = document.getElementById("rec");
 const stopBtn = document.getElementById("stop");
 const status = document.getElementById("status");
+const phonemeBox = document.getElementById("phonemes");
 
 recBtn.onclick = async () => {
   chunks = [];
@@ -41,16 +111,15 @@ stopBtn.onclick = async () => {
   processor.disconnect();
   input.disconnect();
 
-  // 合并
-  let length = chunks.reduce((a, b) => a + b.length, 0);
-  let data = new Float32Array(length);
-  let offset = 0;
+  let len = chunks.reduce((a, b) => a + b.length, 0);
+  let data = new Float32Array(len);
+  let off = 0;
   chunks.forEach(c => {
-    data.set(c, offset);
-    offset += c.length;
+    data.set(c, off);
+    off += c.length;
   });
 
-  // 裁掉前置静音（非常关键）
+  // 裁掉前置静音
   let start = 0;
   while (start < data.length && Math.abs(data[start]) < 0.02) start++;
   data = data.slice(start);
@@ -59,6 +128,7 @@ stopBtn.onclick = async () => {
   const blob = new Blob([wav], { type: "audio/wav" });
 
   status.innerText = "⏳ 评测中...";
+  phonemeBox.innerHTML = "";
 
   const fd = new FormData();
   fd.append("audio", blob);
@@ -67,12 +137,39 @@ stopBtn.onclick = async () => {
   const r = await fetch("/assess", { method: "POST", body: fd });
   const j = await r.json();
 
-  console.log(j);
-  status.innerText =
-    j.accuracy !== null
-      ? "发音分数：" + j.accuracy
-      : "⚠️ 未进入发音评测";
+  if (!j.phonemes || j.phonemes.length === 0) {
+    status.innerText = "⚠️ 未返回音素数据";
+    return;
+  }
+
+  status.innerText = "发音分数：" + j.score;
+  renderPhonemes(j.phonemes);
 };
+
+function renderPhonemes(list) {
+  phonemeBox.innerHTML = "";
+
+  list.forEach(p => {
+    const h = Math.max(8, p.score); // 防止 0 看不见
+
+    const el = document.createElement("div");
+    el.className = "phoneme";
+
+    el.innerHTML = `
+      <div class="phoneme-score">${p.score}</div>
+      <div class="phoneme-letters">${p.letters || ""}</div>
+      <div class="phoneme-bar" style="height:${h}px"></div>
+      <div class="phoneme-ipa">${p.ipa}</div>
+    `;
+
+    el.onclick = () => {
+      const a = new Audio("/audio_phoneme/" + p.ipa + ".mp3");
+      a.play();
+    };
+
+    phonemeBox.appendChild(el);
+  });
+}
 
 function floatToWav(float32, sampleRate) {
   const pcm16 = new Int16Array(float32.length);
@@ -83,10 +180,10 @@ function floatToWav(float32, sampleRate) {
   const buffer = new ArrayBuffer(44 + pcm16.length * 2);
   const view = new DataView(buffer);
 
-  writeStr(view, 0, "RIFF");
+  write(view, 0, "RIFF");
   view.setUint32(4, 36 + pcm16.length * 2, true);
-  writeStr(view, 8, "WAVE");
-  writeStr(view, 12, "fmt ");
+  write(view, 8, "WAVE");
+  write(view, 12, "fmt ");
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
   view.setUint16(22, 1, true);
@@ -94,23 +191,24 @@ function floatToWav(float32, sampleRate) {
   view.setUint32(28, sampleRate * 2, true);
   view.setUint16(32, 2, true);
   view.setUint16(34, 16, true);
-  writeStr(view, 36, "data");
+  write(view, 36, "data");
   view.setUint32(40, pcm16.length * 2, true);
 
-  let pos = 44;
+  let p = 44;
   pcm16.forEach(s => {
-    view.setInt16(pos, s, true);
-    pos += 2;
+    view.setInt16(p, s, true);
+    p += 2;
   });
 
   return buffer;
 }
 
-function writeStr(v, o, s) {
+function write(v, o, s) {
   for (let i = 0; i < s.length; i++) {
     v.setUint8(o + i, s.charCodeAt(i));
   }
 }
 </script>
+
 </body>
 </html>
