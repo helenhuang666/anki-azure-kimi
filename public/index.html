@@ -6,29 +6,20 @@ import cors from "cors";
 const app = express();
 const upload = multer();
 
-app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type"]
-}));
+app.use(cors({ origin: "*", methods: ["GET","POST","OPTIONS"] }));
 app.options("*", cors());
-
 app.use(express.static("public"));
 
 const AZURE_KEY = process.env.AZURE_KEY;
 const AZURE_REGION = process.env.AZURE_REGION;
 
-// ⚠️ 不需要 AZURE_ENDPOINT
 const AZURE_URL = `https://${AZURE_REGION}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1`;
 
 app.post("/assess", upload.single("audio"), async (req, res) => {
   try {
-    const word = req.body.word;
-    const audioBuffer = req.file?.buffer;
-
-    if (!word || !audioBuffer) {
-      return res.json({ error: "Missing word or audio" });
-    }
+    const word = req.body.word?.trim();
+    const audio = req.file?.buffer;
+    if (!word || !audio) return res.json({ error: "missing data" });
 
     const url =
       `${AZURE_URL}?language=en-US&format=detailed` +
@@ -37,40 +28,38 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
       `&pronunciationAssessment.phonemeAlphabet=IPA` +
       `&pronunciationAssessment.dimension=Comprehensive`;
 
-    const azureRes = await fetch(url, {
+    const r = await fetch(url, {
       method: "POST",
       headers: {
         "Ocp-Apim-Subscription-Key": AZURE_KEY,
         "Content-Type": "audio/wav"
       },
-      body: audioBuffer
+      body: audio
     });
 
-    const result = await azureRes.json();
-    console.log("✅ Azure raw:", JSON.stringify(result));
+    const j = await r.json();
+    console.log("✅ Azure raw:", JSON.stringify(j));
 
-    const nbest = result?.NBest?.[0];
+    const w = j?.NBest?.[0]?.Words?.[0];
+    if (!w) return res.json({ score: 0, phonemes: [] });
 
-    let phonemes = [];
-    if (nbest?.Words?.length) {
-      phonemes = nbest.Words[0].Phonemes.map(p => ({
-        symbol: p.Phoneme,
-        score: Math.round(p.AccuracyScore ?? 0)
-      }));
-    }
+    const phonemes = (w.Phonemes || []).map((p, i) => ({
+      ipa: p.Phoneme,
+      score: Math.round(p.AccuracyScore ?? 0),
+      letters: w.Syllables?.[0]?.Grapheme?.[i] || ""
+    }));
 
     res.json({
-      score: Math.round(nbest?.AccuracyScore ?? 0),
+      score: Math.round(j.NBest[0].AccuracyScore ?? 0),
       phonemes
     });
 
-  } catch (err) {
-    console.error("❌ assess error:", err);
-    res.json({ error: "Assessment failed" });
+  } catch (e) {
+    console.error(e);
+    res.json({ error: "assess failed" });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
-});
+app.listen(process.env.PORT || 3000, () =>
+  console.log("Server running")
+);
