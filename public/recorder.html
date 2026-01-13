@@ -10,24 +10,13 @@ body {
   margin: 10px;
   color: #111;
 }
-
 #word {
   font-size: 28px;
   text-align: center;
   margin-bottom: 8px;
 }
-
-#controls {
-  text-align: center;
-  margin-bottom: 6px;
-}
-
-#status {
-  text-align: center;
-  margin: 6px 0;
-  font-size: 14px;
-}
-
+#controls { text-align: center; }
+#status { text-align: center; margin: 6px 0; }
 #phonemes {
   display: flex;
   justify-content: center;
@@ -35,34 +24,17 @@ body {
   gap: 4px;
   margin-top: 14px;
 }
-
-/* 单个音素条 */
 .phoneme {
-  width: 24px;              /* 比之前窄约 30% */
+  width: 24px;
   height: 140px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
   cursor: pointer;
-  user-select: none;
 }
-
-/* 顶部：单词切割片段 */
-.ph-letters {
-  font-size: 11px;
-  line-height: 1;
-  margin-bottom: 2px;
-}
-
-/* 音素分数 */
-.ph-score {
-  font-size: 11px;
-  font-weight: 600;
-  margin-bottom: 2px;
-}
-
-/* 柱状条容器（固定高度，底部对齐） */
+.ph-letters { font-size: 11px; margin-bottom: 2px; }
+.ph-score { font-size: 11px; font-weight: 600; margin-bottom: 2px; }
 .ph-bar-wrap {
   height: 70px;
   width: 100%;
@@ -70,33 +42,20 @@ body {
   align-items: flex-end;
   margin-bottom: 4px;
 }
-
-/* 柱状条本体 */
 .ph-bar {
   width: 100%;
-  border-radius: 3px 3px 0 0;
   background: #3b82f6;
+  border-radius: 3px 3px 0 0;
 }
-
-/* IPA */
-.ph-ipa {
-  font-size: 13px;
-  margin-top: 2px;
-}
-
-/* 弱读音素（自动降权显示） */
-.ph-weak .ph-bar {
-  background: #cbd5e1;
-}
-.ph-weak {
-  color: #6b7280;
-}
+.ph-ipa { font-size: 13px; margin-top: 2px; }
+.ph-weak { color: #6b7280; }
+.ph-weak .ph-bar { background: #cbd5e1; }
 </style>
 </head>
 
 <body>
 
-<div id="word">{{Word}}</div>
+<div id="word"></div>
 
 <div id="controls">
   <button id="rec">🎙 录音</button>
@@ -104,10 +63,15 @@ body {
 </div>
 
 <div id="status"></div>
-
 <div id="phonemes"></div>
 
 <script>
+/* ====== 从 URL 读取 Word（关键） ====== */
+const params = new URLSearchParams(location.search);
+const WORD = params.get("word") || "";
+document.getElementById("word").innerText = WORD;
+
+/* ====== 下面逻辑保持不变 ====== */
 let audioCtx, processor, input;
 let chunks = [];
 
@@ -122,11 +86,8 @@ recBtn.onclick = async () => {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   input = audioCtx.createMediaStreamSource(stream);
   processor = audioCtx.createScriptProcessor(4096, 1, 1);
-
-  processor.onaudioprocess = e => {
+  processor.onaudioprocess = e =>
     chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
-  };
-
   input.connect(processor);
   processor.connect(audioCtx.destination);
   status.innerText = "🎙 录音中...";
@@ -139,12 +100,8 @@ stopBtn.onclick = async () => {
   let len = chunks.reduce((a, b) => a + b.length, 0);
   let data = new Float32Array(len);
   let off = 0;
-  chunks.forEach(c => {
-    data.set(c, off);
-    off += c.length;
-  });
+  chunks.forEach(c => { data.set(c, off); off += c.length; });
 
-  // 裁掉前置静音
   let start = 0;
   while (start < data.length && Math.abs(data[start]) < 0.02) start++;
   data = data.slice(start);
@@ -157,31 +114,22 @@ stopBtn.onclick = async () => {
 
   const fd = new FormData();
   fd.append("audio", blob);
-  fd.append("word", document.getElementById("word").innerText.trim());
+  fd.append("word", WORD);
 
   const r = await fetch("/assess", { method: "POST", body: fd });
   const j = await r.json();
 
-  if (!j.phonemes || j.phonemes.length === 0) {
-    status.innerText = "⚠️ 未返回音素数据";
-    return;
-  }
-
   status.innerText = "发音分数：" + j.score;
-  renderPhonemes(j.phonemes);
+  renderPhonemes(j.phonemes || []);
 };
 
 function renderPhonemes(list) {
   phonemeBox.innerHTML = "";
-
   list.forEach(p => {
     const score = Math.round(p.score || 0);
-    const h = Math.max(6, score * 0.6); // 映射到柱高
-    const weak = score < 60;
-
+    const h = Math.max(6, score * 0.6);
     const el = document.createElement("div");
-    el.className = "phoneme" + (weak ? " ph-weak" : "");
-
+    el.className = "phoneme" + (score < 60 ? " ph-weak" : "");
     el.innerHTML = `
       <div class="ph-letters">${p.letters || ""}</div>
       <div class="ph-score">${score}</div>
@@ -190,52 +138,27 @@ function renderPhonemes(list) {
       </div>
       <div class="ph-ipa">${p.ipa}</div>
     `;
-
-    el.onclick = () => {
-      const a = new Audio("/audio_phoneme/" + p.ipa + ".mp3");
-      a.play();
-    };
-
+    el.onclick = () =>
+      new Audio("/audio_phoneme/" + p.ipa + ".mp3").play();
     phonemeBox.appendChild(el);
   });
 }
 
-function floatToWav(float32, sampleRate) {
-  const pcm16 = new Int16Array(float32.length);
-  for (let i = 0; i < float32.length; i++) {
-    pcm16[i] = Math.max(-1, Math.min(1, float32[i])) * 0x7fff;
-  }
-
-  const buffer = new ArrayBuffer(44 + pcm16.length * 2);
-  const view = new DataView(buffer);
-
-  write(view, 0, "RIFF");
-  view.setUint32(4, 36 + pcm16.length * 2, true);
-  write(view, 8, "WAVE");
-  write(view, 12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  write(view, 36, "data");
-  view.setUint32(40, pcm16.length * 2, true);
-
-  let p = 44;
-  pcm16.forEach(s => {
-    view.setInt16(p, s, true);
-    p += 2;
-  });
-
-  return buffer;
-}
-
-function write(v, o, s) {
-  for (let i = 0; i < s.length; i++) {
-    v.setUint8(o + i, s.charCodeAt(i));
-  }
+function floatToWav(float32, sr) {
+  const pcm = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i++)
+    pcm[i] = Math.max(-1, Math.min(1, float32[i])) * 0x7fff;
+  const b = new ArrayBuffer(44 + pcm.length * 2);
+  const v = new DataView(b);
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o+i,c.charCodeAt(0)));
+  w(0,"RIFF"); v.setUint32(4,36+pcm.length*2,true);
+  w(8,"WAVE"); w(12,"fmt "); v.setUint32(16,16,true);
+  v.setUint16(20,1,true); v.setUint16(22,1,true);
+  v.setUint32(24,sr,true); v.setUint32(28,sr*2,true);
+  v.setUint16(32,2,true); v.setUint16(34,16,true);
+  w(36,"data"); v.setUint32(40,pcm.length*2,true);
+  let p=44; pcm.forEach(s=>{v.setInt16(p,s,true);p+=2});
+  return b;
 }
 </script>
 
