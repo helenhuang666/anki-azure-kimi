@@ -6,7 +6,7 @@ import cors from "cors";
 const app = express();
 const upload = multer();
 
-app.use(cors({ origin: "*", methods: ["GET","POST","OPTIONS"] }));
+app.use(cors({ origin: "*", methods: ["GET", "POST", "OPTIONS"] }));
 app.options("*", cors());
 app.use(express.static("public"));
 
@@ -21,6 +21,7 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
   try {
     const word = req.body.word?.trim();
     const audio = req.file?.buffer;
+
     if (!word || !audio) {
       return res.json({ error: "missing word or audio" });
     }
@@ -45,26 +46,30 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
     console.log("Azure raw:", JSON.stringify(j));
 
     const nbest = j?.NBest?.[0];
-    const wordInfo = nbest?.Words?.[0];
+    const w = nbest?.Words?.[0];
 
-    if (!wordInfo) {
-      return res.json({ score: 0, phonemes: [] });
+    // Azure 没听到
+    if (!nbest || !nbest.Lexical) {
+      return res.json({
+        score: 0,
+        phonemes: [],
+        noSpeech: true
+      });
     }
 
-    const grapheme = wordInfo.Syllables?.[0]?.Grapheme || word;
-    const phonemesRaw = wordInfo.Phonemes || [];
+    const grapheme = w?.Syllables?.[0]?.Grapheme || word;
+    const rawPhonemes = w?.Phonemes || [];
 
-    // 🔧 启发式切割 grapheme
-    const per = Math.floor(grapheme.length / phonemesRaw.length) || 1;
+    // 启发式字母切割（教学用）
+    const per = Math.max(1, Math.floor(grapheme.length / rawPhonemes.length));
     let cursor = 0;
 
-    const phonemes = phonemesRaw.map((p, i) => {
-      let letters;
-      if (i === phonemesRaw.length - 1) {
-        letters = grapheme.slice(cursor);
-      } else {
-        letters = grapheme.slice(cursor, cursor + per);
-      }
+    const phonemes = rawPhonemes.map((p, i) => {
+      const letters =
+        i === rawPhonemes.length - 1
+          ? grapheme.slice(cursor)
+          : grapheme.slice(cursor, cursor + per);
+
       cursor += per;
 
       return {
@@ -76,12 +81,11 @@ app.post("/assess", upload.single("audio"), async (req, res) => {
 
     res.json({
       score: Math.round(nbest.AccuracyScore ?? 0),
-      phonemes,
-      shortAudio: wordInfo.Duration < 1_000_000 // <0.1s
+      phonemes
     });
 
   } catch (e) {
-    console.error(e);
+    console.error("assess error", e);
     res.json({ error: "assessment failed" });
   }
 });
