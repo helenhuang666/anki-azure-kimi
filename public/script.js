@@ -1,53 +1,37 @@
-/* ===== 预创建音频对象（iOS / Anki 必须） ===== */
-const phonemeAudio = new Audio();
-phonemeAudio.preload = "auto";
-
-/* ===== 渲染评测结果 ===== */
-function renderResult(data) {
+window.renderResult = function (data) {
   const box = document.getElementById("phoneme-bars");
   box.innerHTML = "";
 
+  if (!data.phonemes || data.phonemes.length === 0) {
+    box.innerHTML = "<div style='color:#999'>无音素数据</div>";
+    return;
+  }
+
   data.phonemes.forEach(p => {
     const bar = document.createElement("div");
-    bar.className = "ph-bar";
-    bar.style.background = scoreColor(p.score);
+    bar.className = "phoneme-bar";
 
-    bar.innerHTML = `
-      <div class="char">${p.grapheme}</div>
-      <div class="ipa">${p.symbol}</div>
-      <div class="score">${p.score}</div>
-    `;
+    const ipa = document.createElement("div");
+    ipa.className = "phoneme-ipa";
+    ipa.innerText = p.symbol;
 
+    const score = document.createElement("div");
+    score.className = "phoneme-score";
+    score.innerText = p.score;
+
+    bar.appendChild(ipa);
+    bar.appendChild(score);
+
+    /* 点击播放音素音频 */
     bar.onclick = () => {
-      playPhoneme(p.symbol);
-      showTip(p.symbol);
+      const audio = new Audio(
+        "https://anki-azure-kimi.onrender.com/audio_phoneme/" +
+        encodeURIComponent(p.symbol) +
+        ".mp3"
+      );
+      audio.play();
     };
 
     box.appendChild(bar);
   });
-}
-
-/* ===== 播放音素 ===== */
-function playPhoneme(symbol) {
-  phonemeAudio.pause();
-  phonemeAudio.currentTime = 0;
-  phonemeAudio.src =
-    `/audio_phoneme/${encodeURIComponent(symbol)}.mp3`;
-  phonemeAudio.play().catch(() => {});
-}
-
-/* ===== 显示纠音提示 ===== */
-function showTip(symbol) {
-  document.getElementById("tip").innerText =
-    window.PHONEME_TIPS?.[symbol] || "暂无纠音提示";
-}
-
-/* ===== 工具 ===== */
-function scoreColor(s) {
-  if (s >= 90) return "#9fcd8a";
-  if (s >= 70) return "#f2d37c";
-  return "#ef8c8c";
-}
-
-/* ===== 暴露给 Anki ===== */
-window.renderResult = renderResult;
+};
