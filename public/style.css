@@ -10,7 +10,117 @@ body {
   margin-top: 16px;
 }
 
-.ph-bar {
+.ph-bar {body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont;
+  background: #f9fafb;
+  margin: 0;
+  padding: 12px;
+}
+
+#app {
+  text-align: center;
+}
+
+#word {
+  font-size: 28px;
+  font-weight: 600;
+  color: #1e3a8a; /* 深蓝色 */
+  margin-bottom: 10px;
+}
+
+#controls {
+  margin-bottom: 8px;
+}
+
+#status {
+  margin-left: 8px;
+  color: #555;
+}
+
+#score {
+  font-size: 18px;
+  margin: 8px 0;
+}
+
+.bars {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 8px;
+  height: 140px;
+  margin-top: 10px;
+}
+
+.bar {
+  width: 36px;
+  background: #e5e7eb;
+  border-radius: 6px 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  cursor: pointer;
+  position: relative;
+}
+
+.bar-inner {
+  background: #60a5fa;
+  border-radius: 6px 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding-bottom: 4px;
+}
+
+.bar.low .bar-inner {
+  background: #f87171;
+}
+
+.bar .letters {
+  font-size: 11px;
+  color: #111;
+}
+
+.bar .ipa {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bar .p-score {
+  font-size: 11px;
+}
+
+#tip-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+#tip-overlay.hidden {
+  display: none;
+}
+
+#tip-card {
+  background: #fff;
+  padding: 16px;
+  border-radius: 10px;
+  width: 260px;
+  text-align: center;
+}
+
+#tip-ipa {
+  font-size: 26px;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+#tip-text {
+  font-size: 14px;
+  line-height: 1.5;
+}
   width: 32px;
   padding: 6px 2px;
   border-radius: 10px;
