@@ -8,63 +8,88 @@
 body {
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;
   margin: 10px;
+  color: #111;
 }
 
 #word {
   font-size: 28px;
   text-align: center;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 #controls {
   text-align: center;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 #status {
   text-align: center;
-  margin: 8px 0;
+  margin: 6px 0;
+  font-size: 14px;
 }
 
 #phonemes {
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  gap: 6px;
-  margin-top: 12px;
+  gap: 4px;
+  margin-top: 14px;
 }
 
+/* 单个音素条 */
 .phoneme {
-  width: 34px;
-  border-radius: 4px;
-  background: #e5e7eb;
+  width: 24px;              /* 比之前窄约 30% */
+  height: 140px;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
   align-items: center;
+  justify-content: flex-end;
   cursor: pointer;
-  padding: 4px 2px;
+  user-select: none;
 }
 
-.phoneme-score {
-  font-size: 12px;
-  font-weight: bold;
-}
-
-.phoneme-letters {
-  font-size: 12px;
+/* 顶部：单词切割片段 */
+.ph-letters {
+  font-size: 11px;
+  line-height: 1;
   margin-bottom: 2px;
 }
 
-.phoneme-ipa {
-  font-size: 14px;
+/* 音素分数 */
+.ph-score {
+  font-size: 11px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+/* 柱状条容器（固定高度，底部对齐） */
+.ph-bar-wrap {
+  height: 70px;
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  margin-bottom: 4px;
+}
+
+/* 柱状条本体 */
+.ph-bar {
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  background: #3b82f6;
+}
+
+/* IPA */
+.ph-ipa {
+  font-size: 13px;
   margin-top: 2px;
 }
 
-.phoneme-bar {
-  width: 100%;
-  background: #60a5fa;
-  border-radius: 3px 3px 0 0;
+/* 弱读音素（自动降权显示） */
+.ph-weak .ph-bar {
+  background: #cbd5e1;
+}
+.ph-weak {
+  color: #6b7280;
 }
 </style>
 </head>
@@ -150,16 +175,20 @@ function renderPhonemes(list) {
   phonemeBox.innerHTML = "";
 
   list.forEach(p => {
-    const h = Math.max(8, p.score); // 防止 0 看不见
+    const score = Math.round(p.score || 0);
+    const h = Math.max(6, score * 0.6); // 映射到柱高
+    const weak = score < 60;
 
     const el = document.createElement("div");
-    el.className = "phoneme";
+    el.className = "phoneme" + (weak ? " ph-weak" : "");
 
     el.innerHTML = `
-      <div class="phoneme-score">${p.score}</div>
-      <div class="phoneme-letters">${p.letters || ""}</div>
-      <div class="phoneme-bar" style="height:${h}px"></div>
-      <div class="phoneme-ipa">${p.ipa}</div>
+      <div class="ph-letters">${p.letters || ""}</div>
+      <div class="ph-score">${score}</div>
+      <div class="ph-bar-wrap">
+        <div class="ph-bar" style="height:${h}px"></div>
+      </div>
+      <div class="ph-ipa">${p.ipa}</div>
     `;
 
     el.onclick = () => {
