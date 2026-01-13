@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Recorder</title>
+</head>
+<body>
+
+<div>
+  <div id="word" style="font-size:24px;">{{Word}}</div>
+  <button id="rec">🎙 录音</button>
+  <button id="stop">⏹ 停止并评测</button>
+  <div id="status"></div>
+</div>
+
+<script>
+let audioCtx, processor, input;
+let chunks = [];
+
+const recBtn = document.getElementById("rec");
+const stopBtn = document.getElementById("stop");
+const status = document.getElementById("status");
+
+recBtn.onclick = async () => {
+  chunks = [];
+  audioCtx = new AudioContext({ sampleRate: 16000 });
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  input = audioCtx.createMediaStreamSource(stream);
+  processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+  processor.onaudioprocess = e => {
+    chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  };
+
+  input.connect(processor);
+  processor.connect(audioCtx.destination);
+  status.innerText = "🎙 录音中...";
+};
+
+stopBtn.onclick = async () => {
+  processor.disconnect();
+  input.disconnect();
+
+  // 合并
+  let length = chunks.reduce((a, b) => a + b.length, 0);
+  let data = new Float32Array(length);
+  let offset = 0;
+  chunks.forEach(c => {
+    data.set(c, offset);
+    offset += c.length;
+  });
+
+  // 裁掉前置静音（非常关键）
+  let start = 0;
+  while (start < data.length && Math.abs(data[start]) < 0.02) start++;
+  data = data.slice(start);
+
+  const wav = floatToWav(data, 16000);
+  const blob = new Blob([wav], { type: "audio/wav" });
+
+  status.innerText = "⏳ 评测中...";
+
+  const fd = new FormData();
+  fd.append("audio", blob);
+  fd.append("word", document.getElementById("word").innerText.trim());
+
+  const r = await fetch("/assess", { method: "POST", body: fd });
+  const j = await r.json();
+
+  console.log(j);
+  status.innerText =
+    j.accuracy !== null
+      ? "发音分数：" + j.accuracy
+      : "⚠️ 未进入发音评测";
+};
+
+function floatToWav(float32, sampleRate) {
+  const pcm16 = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i++) {
+    pcm16[i] = Math.max(-1, Math.min(1, float32[i])) * 0x7fff;
+  }
+
+  const buffer = new ArrayBuffer(44 + pcm16.length * 2);
+  const view = new DataView(buffer);
+
+  writeStr(view, 0, "RIFF");
+  view.setUint32(4, 36 + pcm16.length * 2, true);
+  writeStr(view, 8, "WAVE");
+  writeStr(view, 12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeStr(view, 36, "data");
+  view.setUint32(40, pcm16.length * 2, true);
+
+  let pos = 44;
+  pcm16.forEach(s => {
+    view.setInt16(pos, s, true);
+    pos += 2;
+  });
+
+  return buffer;
+}
+
+function writeStr(v, o, s) {
+  for (let i = 0; i < s.length; i++) {
+    v.setUint8(o + i, s.charCodeAt(i));
+  }
+}
+</script>
+</body>
+</html>
