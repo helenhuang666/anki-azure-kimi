@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8" />
+<title>Pronunciation UI</title>
+<style>
+body {
+  font-family: system-ui;
+  margin: 0;
+  padding: 12px;
+}
+
+#score {
+  font-size: 20px;
+  margin-bottom: 10px;
+}
+
+#bars {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.bar {
+  width: 42px;
+  height: 140px;
+  border: 1px solid #ccc;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  cursor: pointer;
+}
+
+.fill {
+  width: 100%;
+  background: #4da3ff;
+}
+
+.ipa {
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.score {
+  font-size: 12px;
+}
+</style>
+</head>
+
+<body>
+<div id="score">加载中…</div>
+<div id="bars"></div>
+
+<script src="phoneme_tips.js"></script>
+<script>
+async function loadResult() {
+  const r = await fetch("/latest");
+  const j = await r.json();
+
+  if (!j.ok) {
+    document.getElementById("score").innerText = "暂无评测结果";
+    return;
+  }
+
+  document.getElementById("score").innerText =
+    `发音分数：${j.score}`;
+
+  const bars = document.getElementById("bars");
+  bars.innerHTML = "";
+
+  j.phonemes.forEach(p => {
+    const bar = document.createElement("div");
+    bar.className = "bar";
+
+    const fill = document.createElement("div");
+    fill.className = "fill";
+    fill.style.height = p.score + "%";
+
+    const s = document.createElement("div");
+    s.className = "score";
+    s.innerText = p.score;
+
+    const ipa = document.createElement("div");
+    ipa.className = "ipa";
+    ipa.innerText = p.ipa;
+
+    bar.appendChild(s);
+    bar.appendChild(fill);
+    bar.appendChild(ipa);
+
+    bar.onclick = () => {
+      // 播放音素 mp3（文件名 = IPA.mp3）
+      new Audio(`/audio_phoneme/${p.ipa}.mp3`).play();
+
+      // 显示中文纠音
+      const tip = window.PHONEME_TIPS?.[p.ipa];
+      if (tip) alert(`${p.ipa}\n\n${tip}`);
+    };
+
+    bars.appendChild(bar);
+  });
+}
+
+loadResult();
+</script>
+</body>
+</html>
