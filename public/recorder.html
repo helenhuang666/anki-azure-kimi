@@ -1,35 +1,36 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>Pronunciation Recorder</title>
-  <link rel="stylesheet" href="style.css" />
-</head>
+<!doctype html>
+<html>
 <body>
-  <div id="app">
-    <div id="word"></div>
+<div id="status">评测中…</div>
+<div id="score"></div>
+<pre id="raw"></pre>
 
-    <div id="controls">
-      <button id="recBtn">🎙 录音</button>
-      <button id="stopBtn" disabled>⏹ 停止并评测</button>
-      <span id="status"></span>
-    </div>
+<script>
+const params = new URLSearchParams(location.search);
+const word = params.get("word");
+const audioB64 = params.get("audio");
 
-    <div id="score"></div>
+fetch(audioB64)
+  .then(r => r.blob())
+  .then(blob => {
+    const fd = new FormData();
+    fd.append("word", word);
+    fd.append("audio", blob, "rec.webm");
 
-    <div id="phoneme-bars" class="bars"></div>
-  </div>
-
-  <div id="tip-overlay" class="hidden">
-    <div id="tip-card">
-      <div id="tip-ipa"></div>
-      <div id="tip-text"></div>
-      <button id="tip-close">关闭</button>
-    </div>
-  </div>
-
-  <script src="phoneme_tips.js"></script>
-  <script src="phoneme_resolver.js"></script>
-  <script src="script.js"></script>
+    return fetch("/assess", { method: "POST", body: fd });
+  })
+  .then(r => r.json())
+  .then(j => {
+    document.getElementById("status").innerText = "完成";
+    document.getElementById("score").innerText =
+      "分数：" + j.score;
+    document.getElementById("raw").innerText =
+      JSON.stringify(j, null, 2);
+  })
+  .catch(e => {
+    document.getElementById("status").innerText = "失败";
+    console.error(e);
+  });
+</script>
 </body>
 </html>
