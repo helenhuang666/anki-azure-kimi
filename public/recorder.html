@@ -1,36 +1,217 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Pronunciation Recorder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
+      background: #f6f8fb;
+      margin: 0;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .word {
+      font-size: 28px;
+      font-weight: 600;
+      color: #0b3a82; /* 深蓝色 */
+      margin-bottom: 12px;
+    }
+
+    button {
+      font-size: 16px;
+      padding: 10px 18px;
+      margin: 6px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+    }
+
+    #recordBtn {
+      background: #1976d2;
+      color: #fff;
+    }
+
+    #recordBtn.recording {
+      background: #d32f2f;
+    }
+
+    #status {
+      margin-top: 10px;
+      font-size: 14px;
+      color: #666;
+    }
+
+    #result {
+      margin-top: 12px;
+      font-size: 16px;
+    }
+  </style>
+</head>
 <body>
-<div id="status">评测中…</div>
-<div id="score"></div>
-<pre id="raw"></pre>
 
-<script>
-const params = new URLSearchParams(location.search);
-const word = params.get("word");
-const audioB64 = params.get("audio");
+  <div class="word" id="word">—</div>
 
-fetch(audioB64)
-  .then(r => r.blob())
-  .then(blob => {
-    const fd = new FormData();
-    fd.append("word", word);
-    fd.append("audio", blob, "rec.webm");
+  <button id="recordBtn">开始录音</button>
 
-    return fetch("/assess", { method: "POST", body: fd });
-  })
-  .then(r => r.json())
-  .then(j => {
-    document.getElementById("status").innerText = "完成";
-    document.getElementById("score").innerText =
-      "分数：" + j.score;
-    document.getElementById("raw").innerText =
-      JSON.stringify(j, null, 2);
-  })
-  .catch(e => {
-    document.getElementById("status").innerText = "失败";
-    console.error(e);
-  });
-</script>
+  <div id="status"></div>
+  <div id="result"></div>
+
+  <script>
+    /********************
+     * 取 Anki 单词字段
+     ********************/
+    function getWord() {
+      // Anki iframe 里常用方式
+      const params = new URLSearchParams(window.location.search);
+      return params.get("word") || "—";
+    }
+
+    const WORD = getWord();
+    document.getElementById("word").textContent = WORD;
+
+    /********************
+     * 录音相关变量
+     ********************/
+    let audioContext;
+    let mediaStream;
+    let processor;
+    let source;
+    let pcmData = [];
+    let recording = false;
+
+    const recordBtn = document.getElementById("recordBtn");
+    const statusEl = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+
+    /********************
+     * PCM → WAV (16kHz)
+     ********************/
+    function pcmToWav(samples, sampleRate = 16000) {
+      const buffer = new ArrayBuffer(44 + samples.length * 2);
+      const view = new DataView(buffer);
+
+      function writeString(offset, s) {
+        for (let i = 0; i < s.length; i++) {
+          view.setUint8(offset + i, s.charCodeAt(i));
+        }
+      }
+
+      writeString(0, "RIFF");
+      view.setUint32(4, 36 + samples.length * 2, true);
+      writeString(8, "WAVE");
+      writeString(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeString(36, "data");
+      view.setUint32(40, samples.length * 2, true);
+
+      let offset = 44;
+      for (let i = 0; i < samples.length; i++, offset += 2) {
+        let s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      }
+
+      return new Blob([view], { type: "audio/wav" });
+    }
+
+    /********************
+     * 开始录音
+     ********************/
+    async function startRecording() {
+      pcmData = [];
+      statusEl.textContent = "🎙 正在录音…";
+      resultEl.textContent = "";
+
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        }
+      });
+
+      audioContext = new AudioContext({ sampleRate: 16000 });
+      source = audioContext.createMediaStreamSource(mediaStream);
+      processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+      processor.onaudioprocess = (e) => {
+        pcmData.push(...e.inputBuffer.getChannelData(0));
+      };
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      recording = true;
+      recordBtn.textContent = "停止录音";
+      recordBtn.classList.add("recording");
+    }
+
+    /********************
+     * 停止录音并评测
+     ********************/
+    async function stopRecording() {
+      recording = false;
+      recordBtn.textContent = "开始录音";
+      recordBtn.classList.remove("recording");
+      statusEl.textContent = "⏳ 正在评测…";
+
+      processor.disconnect();
+      source.disconnect();
+      mediaStream.getTracks().forEach(t => t.stop());
+      await audioContext.close();
+
+      const wav = pcmToWav(pcmData);
+
+      const form = new FormData();
+      form.append("audio", wav, "record.wav");
+      form.append("word", WORD);
+
+      try {
+        const r = await fetch("/assess", {
+          method: "POST",
+          body: form
+        });
+
+        const j = await r.json();
+
+        if (j.error) {
+          statusEl.textContent = "❌ 评测失败";
+          resultEl.textContent = j.error;
+          return;
+        }
+
+        statusEl.textContent = "✅ 完成";
+        resultEl.textContent = "分数：" + j.score;
+
+        // 👉 这里后面就是你现在在做的「音素 UI 渲染」
+        // j.phonemes = [{ ipa, score }]
+        // 你已经能接上了
+
+      } catch (e) {
+        statusEl.textContent = "❌ 网络或服务异常";
+        resultEl.textContent = "";
+      }
+    }
+
+    recordBtn.onclick = () => {
+      if (!recording) {
+        startRecording();
+      } else {
+        stopRecording();
+      }
+    };
+  </script>
+
 </body>
 </html>
